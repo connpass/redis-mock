@@ -123,6 +123,7 @@ class Redis(BaseRedis):
         global _caches, _locks
         self._cache = _caches.setdefault(self._name, {})
         self._lock = _locks.setdefault(self._name, RWLock())
+        self.connection = None
         self.connection_pool = MockConnectionPool()
 
     #### BASIC KEY COMMANDS ####
@@ -167,7 +168,7 @@ class Redis(BaseRedis):
         """
         with self._lock.writer():
             name = self._to_str(name)
-            value = self._to_str(value) 
+            value = self._to_str(value)
             prev_value = self._cache.get(name, None)
             if _nx and name in self._cache:
                 return prev_value if _get else False
@@ -284,7 +285,7 @@ class Redis(BaseRedis):
                     val = reversed(val)
                     _num *= -1
 
-                new_val = [] 
+                new_val = []
                 rem_count = 0
                 for x in val:
                     if x == value and (_num is None or _num > 0):
@@ -293,7 +294,7 @@ class Redis(BaseRedis):
                         rem_count += 1
                     else:
                         new_val.append(x)
-                
+
                 if num < 0:
                     new_val.reverse()
 
@@ -306,7 +307,7 @@ class Redis(BaseRedis):
         return self._execute_command(_lrem, name, value, num)
 
     #### HASH COMMANDS ####
-    
+
     def hdel(self, name, *keys):
         def _hdel(name, *keys):
             with self._lock.writer():
@@ -489,7 +490,7 @@ class Redis(BaseRedis):
 
     def _assert_list(self, val):
         if val is None:
-            return [] 
+            return []
         if isinstance(val, (list, tuple)):
             return val
         else:
@@ -516,7 +517,7 @@ class Redis(BaseRedis):
             return None
         if isinstance(val, str):
             return val
-        elif isinstance(val, unicode):
+        elif isinstance(val, bytes):
             return val.decode(self._charset, self._errors)
         else:
             raise ResponseError("Operation against a key holding the wrong kind of value")
@@ -529,7 +530,7 @@ class Redis(BaseRedis):
         Needed to make sure that UnicodeDecodeErrors are thrown
         when saving values.
         """
-        if isinstance(value, unicode):
+        if isinstance(value, bytes):
             return value.encode(self._charset, self._errors)
         return str(value)
 
@@ -540,6 +541,7 @@ class Pipeline(Redis):
         self._cache = _caches.setdefault(self._name, {})
         self._lock = _locks.setdefault(self._name, RWLock())
 
+        self.connection = None
         self.connection_pool = connection_pool
         self.watching = False
         self.explicit_transaction = False
@@ -573,9 +575,9 @@ class Pipeline(Redis):
         for cmd, args, kwargs in self.command_stack:
             try:
                 ret_vals.append(cmd(*args, **kwargs))
-            except RedisError, error:
+            except RedisError as error:
                 ret_vals.append(error)
-        self.reset()    
+        self.reset()
         return ret_vals
 
     def reset(self):

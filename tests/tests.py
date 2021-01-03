@@ -18,19 +18,19 @@ class RedisMockStringTest(TestCase):
     def setUp(self):
         self.mock = redis_mock.Redis()
         self.mock._cache.clear()
-        self.mock._cache['test-key'] = u"スパム".encode('utf-8')
-        self.mock._cache['test-key2'] = u"エッグ".encode('utf-8')
+        self.mock._cache['test-key'] = "スパム"
+        self.mock._cache['test-key2'] = "エッグ"
         self.mock._cache['int-val'] = "11"
 
     def test_get(self):
         val = self.mock.get('test-key')
         self.assertTrue(isinstance(val, str))
-        self.assertEquals(val, u"スパム".encode('utf-8'))
+        self.assertEquals(val, "スパム")
 
     def test_getset(self):
         val = self.mock.getset('test-key', "new-value")
         self.assertTrue(isinstance(val, str))
-        self.assertEquals(val, u"スパム".encode('utf-8'))
+        self.assertEquals(val, "スパム")
         self.assertEquals(self.mock._cache['test-key'], "new-value")
 
     def test_incr(self):
@@ -66,7 +66,7 @@ class RedisMockStringTest(TestCase):
 
     def test_setnx(self):
         self.assertFalse(self.mock.setnx('test-key', "testvalue"))
-        self.assertEquals(self.mock._cache['test-key'], u"スパム".encode('utf-8'))
+        self.assertEquals(self.mock._cache['test-key'], "スパム")
 
         self.assertTrue(self.mock.setnx('new-key', "some-new-testvalue"))
         self.assertEquals(self.mock._cache['new-key'], "some-new-testvalue")
@@ -74,11 +74,11 @@ class RedisMockStringTest(TestCase):
         self.assertEquals(self.mock._cache['new-key'], "some-new-testvalue")
 
     def test_set_unicode_value(self):
-        self.assertTrue(self.mock.set('test-key', u"ほげ"))
-        self.assertEquals(self.mock._cache['test-key'], u"ほげ".encode("utf8"))
+        self.assertTrue(self.mock.set('test-key', "ほげ"))
+        self.assertEquals(self.mock._cache['test-key'], "ほげ")
 
-        self.assertTrue(self.mock.set('new-key', u"ほげほげ"))
-        self.assertEquals(self.mock._cache['new-key'], u"ほげほげ".encode("utf8"))
+        self.assertTrue(self.mock.set('new-key', "ほげほげ"))
+        self.assertEquals(self.mock._cache['new-key'], "ほげほげ")
 
     def test_delete(self):
         self.assertTrue(self.mock.delete('test-key'))
@@ -97,8 +97,8 @@ class RedisMockListTest(TestCase):
     def setUp(self):
         self.mock = redis_mock.Redis()
         self.mock._cache.clear()
-        self.mock._cache['test-key'] = u"スパム".encode('utf-8')
-        self.mock._cache['test-list'] = [u"スパム".encode('utf-8'), u"エッグ".encode('utf-8')]
+        self.mock._cache['test-key'] = "スパム"
+        self.mock._cache['test-list'] = ["スパム", "エッグ"]
         self.mock._cache['test-int-list'] = ['1','2','3','4','5','6','7','8']
         self.mock._cache['test-dup-list'] = ['1','4','3','4','7','4','7','8']
 
@@ -141,8 +141,8 @@ class RedisMockListTest(TestCase):
         self.assertEquals(self.mock.lrange('test-int-list', 0, -1), ['10', '1','2','3','4','5','6','7','8'])
 
     def test_lpush_unicode_value(self):
-        self.assertEquals(self.mock.lpush('test-int-list', u"ほげ"), 9)
-        self.assertEquals(self.mock._cache['test-int-list'], [u"ほげ".encode("utf8"), '1','2','3','4','5','6','7','8'])
+        self.assertEquals(self.mock.lpush('test-int-list', "ほげ"), 9)
+        self.assertEquals(self.mock._cache['test-int-list'], ["ほげ", '1','2','3','4','5','6','7','8'])
 
     def test_lpush_not_exists(self):
         self.assertEquals(self.mock.lpush('test-not-exists', 10), 1)
@@ -159,8 +159,8 @@ class RedisMockListTest(TestCase):
         self.assertEquals(self.mock.lrange('test-int-list', 0, -1), ['1','2','3','4','5','6','7','8', '10'])
 
     def test_rpush_unicode_value(self):
-        self.assertEquals(self.mock.rpush('test-int-list', u"ほげ"), 9)
-        self.assertEquals(self.mock._cache['test-int-list'], ['1','2','3','4','5','6','7','8', u"ほげ".encode("utf8")])
+        self.assertEquals(self.mock.rpush('test-int-list', "ほげ"), 9)
+        self.assertEquals(self.mock._cache['test-int-list'], ['1','2','3','4','5','6','7','8', "ほげ"])
 
     def test_lrange_all(self):
         self.assertEquals(self.mock.lrange('test-int-list', 0, -1), ['1','2','3','4','5','6','7','8'])
@@ -176,7 +176,7 @@ class RedisMockListTest(TestCase):
         self.assertEquals(self.mock.lrange('test-int-list', 2, -4), ['3','4','5'])
 
     def test_ltrim_out_of_bounds(self):
-        u"""
+        """
         LTRIM trimming using indexes that are out of bounds.
         """
         self.mock.ltrim('test-int-list', 10, 20)
@@ -236,10 +236,10 @@ class RedisMockSetTest(TestCase):
     def setUp(self):
         self.mock = redis_mock.Redis()
         self.mock._cache.clear()
-        self.mock._cache['test-key'] = u"スパム".encode('utf-8')
+        self.mock._cache['test-key'] = "スパム"
         self.mock._cache['test-string-set'] = set([
-            u"スパム".encode('utf-8'),
-            u"エッグ".encode('utf-8'),
+            "スパム",
+            "エッグ",
         ])
         self.mock._cache['test-int-set'] = set(['1','2','3','4','5','6','7','8'])
 
@@ -252,11 +252,11 @@ class RedisMockSetTest(TestCase):
         self.assertEqual(self.mock._cache['test-int-set'], set(['1','2','3','4','5','6','7','8', '9']))
 
     def test_sadd_unicode_value(self):
-        self.assertTrue(self.mock.sadd('test-string-set', u"ほげ"))
+        self.assertTrue(self.mock.sadd('test-string-set', "ほげ"))
         self.assertEquals(self.mock._cache['test-string-set'], set([
-            u"スパム".encode('utf-8'),
-            u"エッグ".encode('utf-8'),
-            u"ほげ".encode('utf-8'),
+            "スパム",
+            "エッグ",
+            "ほげ",
         ]))
 
     def test_srem(self):
@@ -266,9 +266,9 @@ class RedisMockSetTest(TestCase):
         self.assertEqual(self.mock._cache['test-int-set'], set(['2','3','4','5','6','7']))
 
     def test_srem_unicode_value(self):
-        self.assertTrue(self.mock.srem('test-string-set', u"スパム"))
+        self.assertTrue(self.mock.srem('test-string-set', "スパム"))
         self.assertEquals(self.mock._cache['test-string-set'], set([
-            u"エッグ".encode('utf-8'),
+            "エッグ",
         ]))
 
     def test_srem_notexists(self):
@@ -281,8 +281,8 @@ class RedisMockSetTest(TestCase):
         self.assertFalse(self.mock.sismember('test-int-set', '9'))
 
     def test_sismember_unicode_value(self):
-        self.assertTrue(self.mock.sismember('test-string-set', u"スパム"))
-        self.assertFalse(self.mock.sismember('test-string-set', u"ほげほげ"))
+        self.assertTrue(self.mock.sismember('test-string-set', "スパム"))
+        self.assertFalse(self.mock.sismember('test-string-set', "ほげほげ"))
 
     def test_sismember_notexists(self):
         self.assertFalse(self.mock.sismember('test-nonexists', "spam"))
@@ -291,16 +291,16 @@ class RedisMockHashTest(TestCase):
     def setUp(self):
         self.mock = redis_mock.Redis()
         self.mock._cache.clear()
-        self.mock._cache['test-key'] = u"スパム".encode('utf-8')
+        self.mock._cache['test-key'] = "スパム"
         self.mock._cache['test-hash'] = {
-            "hashkey1": u"スパム".encode('utf-8'),
-            "hashkey2": u"エッグ".encode('utf-8'),
+            "hashkey1": "スパム",
+            "hashkey2": "エッグ",
         }
 
     def test_hget(self):
         val = self.mock.hget('test-hash', "hashkey1")
         self.assertTrue(isinstance(val, str))
-        self.assertEquals(val, u"スパム".encode('utf-8'))
+        self.assertEquals(val, "スパム")
 
     def test_hget_none(self):
         val = self.mock.hget('test-hash', "not-exists")
@@ -336,9 +336,9 @@ class RedisMockHashTest(TestCase):
         self.assertEquals(val, 0)
 
     def test_hset_unicode(self):
-        val = self.mock.hset('test-hash', u"ほげ", u"ホゲ")
+        val = self.mock.hset('test-hash', "ほげ", "ホゲ")
         self.assertEquals(val, 1)
-        self.assertEquals(self.mock._cache['test-hash'][u"ほげ".encode("utf-8")], u"ホゲ".encode("utf-8"))
+        self.assertEquals(self.mock._cache['test-hash'].get("ほげ"), "ホゲ")
 
     def test_hset_bad_val(self):
         self.assertRaises(redis.ResponseError,
@@ -363,7 +363,7 @@ class RedisMockHashTest(TestCase):
 
     def test_hdel_bad_val(self):
         self.assertRaises(redis.ResponseError,
-            self.mock.hdel, 'test-key', 'some-val') 
+            self.mock.hdel, 'test-key', 'some-val')
 
     def test_hexists(self):
         self.assertTrue(self.mock.hexists('test-hash', 'hashkey1'))
@@ -378,8 +378,8 @@ class RedisPipelineTest(TestCase):
     def setUp(self):
         self.mock = redis_mock.Redis()
         self.mock._cache.clear()
-        self.mock._cache['test-key'] = u"スパム".encode('utf-8')
-        self.mock._cache['test-key2'] = u"エッグ".encode('utf-8')
+        self.mock._cache['test-key'] = "スパム"
+        self.mock._cache['test-key2'] = "エッグ"
 
     def test_simple_pipeline(self):
         pipe = self.mock.pipeline()
@@ -388,7 +388,7 @@ class RedisPipelineTest(TestCase):
         self.assertEquals(pipe, pipe.get("not-exists"))
 
         value = pipe.execute()
-        self.assertEquals(value, [u"スパム".encode('utf-8'), u"エッグ".encode('utf-8'), None])
+        self.assertEquals(value, ["スパム", "エッグ", None])
 
     def test_rpush(self):
         pipe = self.mock.pipeline()
