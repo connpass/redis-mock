@@ -531,8 +531,10 @@ class Redis(BaseRedis):
         when saving values.
         """
         if isinstance(value, bytes):
+            return value
+        elif isinstance(value, str):
             return value.encode(self._charset, self._errors)
-        return str(value)
+        return bytes(str(value), 'utf-8')
 
 class Pipeline(Redis):
     def __init__(self, name, connection_pool, response_callbacks, transaction, shard_hint):
