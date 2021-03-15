@@ -1,6 +1,8 @@
 #:coding=utf-8:
 
 import contextlib
+from fnmatch import fnmatch
+from itertools import islice
 try:
     import threading
 except ImportError:
@@ -123,27 +125,32 @@ class Redis(BaseRedis):
         global _caches, _locks
         self._cache = _caches.setdefault(self._name, {})
         self._lock = _locks.setdefault(self._name, RWLock())
+        self.connection = None
         self.connection_pool = MockConnectionPool()
 
     #### BASIC KEY COMMANDS ####
     def exists(self, name):
         def _exists(name):
             with self._lock.reader():
+                name = self._to_str(name)
                 return name in self._cache
         return self._execute_command(_exists, name)
 
     def get(self, name):
         def _get(name):
             with self._lock.reader():
+                name = self._to_str(name)
                 return self._assert_str(self._cache.get(name, None))
         return self._execute_command(_get, name)
 
     def getset(self, name, value):
+        name = self._to_str(name)
         return self._execute_command(self.__set, name, value, _get=True)
 
     def incr(self, name, amount=1):
         def _incr(name, amount):
             with self._lock.writer():
+                name = self._to_str(name)
                 value = self._assert_int(self._cache.get(name, None))
                 value += self._assert_int(amount)
                 value = self._to_str(value)
@@ -152,12 +159,15 @@ class Redis(BaseRedis):
         return self._execute_command(_incr, name, amount)
 
     def incrby(self, name, amount=1):
+        name = self._to_str(name)
         return self.incr(name, amount)
 
     def set(self, name, value):
+        name = self._to_str(name)
         return self._execute_command(self.__set, name, value)
 
     def setnx(self, name, value):
+        name = self._to_str(name)
         return self._execute_command(self.__set, name, value, _nx=True)
 
     def __set(self, name, value, _nx=False, _get=False):
@@ -167,7 +177,7 @@ class Redis(BaseRedis):
         """
         with self._lock.writer():
             name = self._to_str(name)
-            value = self._to_str(value) 
+            value = self._to_str(value)
             prev_value = self._cache.get(name, None)
             if _nx and name in self._cache:
                 return prev_value if _get else False
@@ -185,6 +195,30 @@ class Redis(BaseRedis):
                         deleted = True
                 return deleted
         return self._execute_command(_delete, *names)
+
+    def keys(self, pattern='*'):
+        def _keys(pattern):
+            with self._lock.reader():
+                return [x for x in self._cache.keys() if self._key_match(pattern, x)]
+        return self._execute_command(_keys, pattern)
+
+    def scan(self, cursor=0, match=None, count=None, _type=None):
+        def _scan(cursor, match, count, _type):
+            with self._lock.reader():
+                def match_fn(key):
+                    if not self._key_match(match, key):
+                        return False
+                    item = self._cache[key]
+                    return self._is_type(item, _type)
+
+                end = cursor + count if count is not None else None
+
+                # filter first, then slice the filtered list, so that we paginate correctly
+                matches = filter(match_fn, self._cache.keys())
+                page = islice(matches, cursor, end)
+                return list(page)
+
+        return self._execute_command(_scan, cursor, match, count, _type)
 
     #### LIST COMMANDS ####
 
@@ -221,6 +255,7 @@ class Redis(BaseRedis):
         return self._execute_command(_rpush, name, value)
 
     def _lrange(self, name, start, end):
+        name = self._to_str(name)
         val = self._assert_list(self._cache.get(name, None))
         end += 1
         if end == 0:
@@ -230,7 +265,8 @@ class Redis(BaseRedis):
     def lrange(self, name, start, end):
         def __lrange(name, start, end):
             with self._lock.writer():
-                return self._lrange(self._to_str(name), start, end)
+                name = self._to_str(name)
+                return self._lrange(name, start, end)
         return self._execute_command(__lrange, name, start, end)
 
     def ltrim(self, name, start, end):
@@ -284,7 +320,7 @@ class Redis(BaseRedis):
                     val = reversed(val)
                     _num *= -1
 
-                new_val = [] 
+                new_val = []
                 rem_count = 0
                 for x in val:
                     if x == value and (_num is None or _num > 0):
@@ -293,7 +329,7 @@ class Redis(BaseRedis):
                         rem_count += 1
                     else:
                         new_val.append(x)
-                
+
                 if num < 0:
                     new_val.reverse()
 
@@ -306,17 +342,18 @@ class Redis(BaseRedis):
         return self._execute_command(_lrem, name, value, num)
 
     #### HASH COMMANDS ####
-    
+
     def hdel(self, name, *keys):
         def _hdel(name, *keys):
             with self._lock.writer():
                 # Emulate Redis < 2.4 for now
                 # TODO: Behavior based on _server_verison
+                name = self._to_str(name)
                 if len(keys) != 1:
                     # When no keys are passed emulate an error
                     # returned from the server.
                     raise ResponseError("wrong number of arguments for 'hdel' command")
-                val = self._assert_dict(self._cache.get(self._to_str(name), None))
+                val = self._assert_dict(self._cache.get(name, None))
 
                 deleted_count = 0
                 for k in keys:
@@ -333,8 +370,11 @@ class Redis(BaseRedis):
     def hexists(self, name, key):
         def _hexists(name, keys):
             with self._lock.writer():
-                val = self._assert_dict(self._cache.get(self._to_str(name), None))
-                return key in val
+                name = self._to_str(name)
+                keys = self._to_str(keys)
+
+                val = self._assert_dict(self._cache.get(name, None))
+                return keys in val
         return self._execute_command(_hexists, name, key)
 
     def hget(self, name, key):
@@ -351,7 +391,8 @@ class Redis(BaseRedis):
             with self._lock.writer():
                 # Redis only stores strings in hashes
                 # which are immutable in Python so a shallow copy is adequate.
-                return self._assert_dict(self._cache.get(self._to_str(name), None)).copy()
+                name = self._to_str(name)
+                return self._assert_dict(self._cache.get(name, None)).copy()
         return self._execute_command(_hgetall, name)
 
     def hset(self, name, key, value):
@@ -373,7 +414,8 @@ class Redis(BaseRedis):
     def hlen(self, name):
         def _hlen(name):
             with self._lock.writer():
-                return len(self._assert_dict(self._cache.get(self._to_str(name), None)))
+                name = self._to_str(name)
+                return len(self._assert_dict(self._cache.get(name, None)))
         return self._execute_command(_hlen, name)
 
     #### SET COMMANDS ####
@@ -396,6 +438,7 @@ class Redis(BaseRedis):
     def scard(self, name):
         def _scard(name):
             with self._lock.reader():
+                name = self._to_str(name)
                 val = self._assert_set(self._cache.get(name, None))
                 return len(val)
         return self._execute_command(_scard, name)
@@ -417,7 +460,7 @@ class Redis(BaseRedis):
         def _sinter(keys, *args):
             with self._lock.writer():
                 keys = list_or_args(keys, args)
-                sets = [self._assert_set(self._cache.get(key, None)) for key in keys]
+                sets = [self._assert_set(self._cache.get(self._to_str(key), None)) for key in keys]
 
                 if sets:
                     i = sets[0]
@@ -471,10 +514,39 @@ class Redis(BaseRedis):
         return pipe
 
     def execute_command(self, *args, **options):
-        raise NotImplemented("Executing commands is not supported by this Mock")
+        raise NotImplementedError("Executing commands is not supported by this Mock")
 
     def _execute_command(self, cmd, *args, **kwargs):
         return cmd(*args, **kwargs)
+
+    def _is_hash(self, val):
+        return isinstance(val, dict)
+
+    def _is_list(self, val):
+        return isinstance(val, list)
+
+    def _is_set(self, val):
+        return isinstance(val, set)
+
+    def _is_string(self, val):
+        return isinstance(val, (str, bytes))
+
+    def _is_type(self, val, type):
+        def not_implemented(val):
+            raise NotImplementedError("{} is not supported by this Mock".format(type))
+        return {
+            'hash': lambda x: isinstance(x, dict),
+            'list': lambda x: isinstance(x, list),
+            'set': lambda x: isinstance(x, set),
+            'stream': not_implemented,
+            'string': lambda x: isinstance(x, (str, bytes)),
+            'zset': not_implemented,
+            None: lambda x: True,
+        }[type](val)
+
+    def _key_match(self, pattern, key):
+        pattern = pattern or '*'
+        return fnmatch(key, self._to_str(pattern))
 
     def _assert_int(self, val):
         if val is None:
@@ -489,7 +561,7 @@ class Redis(BaseRedis):
 
     def _assert_list(self, val):
         if val is None:
-            return [] 
+            return []
         if isinstance(val, (list, tuple)):
             return val
         else:
@@ -516,8 +588,8 @@ class Redis(BaseRedis):
             return None
         if isinstance(val, str):
             return val
-        elif isinstance(val, unicode):
-            return val.decode(self._charset, self._errors)
+        elif isinstance(val, bytes):
+            return val
         else:
             raise ResponseError("Operation against a key holding the wrong kind of value")
 
@@ -529,9 +601,11 @@ class Redis(BaseRedis):
         Needed to make sure that UnicodeDecodeErrors are thrown
         when saving values.
         """
-        if isinstance(value, unicode):
+        if isinstance(value, bytes):
+            return value
+        elif isinstance(value, str):
             return value.encode(self._charset, self._errors)
-        return str(value)
+        return bytes(str(value), 'utf-8')
 
 class Pipeline(Redis):
     def __init__(self, name, connection_pool, response_callbacks, transaction, shard_hint):
@@ -540,6 +614,7 @@ class Pipeline(Redis):
         self._cache = _caches.setdefault(self._name, {})
         self._lock = _locks.setdefault(self._name, RWLock())
 
+        self.connection = None
         self.connection_pool = connection_pool
         self.watching = False
         self.explicit_transaction = False
@@ -573,9 +648,9 @@ class Pipeline(Redis):
         for cmd, args, kwargs in self.command_stack:
             try:
                 ret_vals.append(cmd(*args, **kwargs))
-            except RedisError, error:
+            except RedisError as error:
                 ret_vals.append(error)
-        self.reset()    
+        self.reset()
         return ret_vals
 
     def reset(self):
