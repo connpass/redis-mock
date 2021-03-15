@@ -1,6 +1,8 @@
 #:coding=utf-8:
 
 import contextlib
+from fnmatch import fnmatch
+from itertools import islice
 try:
     import threading
 except ImportError:
@@ -193,6 +195,30 @@ class Redis(BaseRedis):
                         deleted = True
                 return deleted
         return self._execute_command(_delete, *names)
+
+    def keys(self, pattern='*'):
+        def _keys(pattern):
+            with self._lock.reader():
+                return [x for x in self._cache.keys() if self._key_match(pattern, x)]
+        return self._execute_command(_keys, pattern)
+
+    def scan(self, cursor=0, match=None, count=None, _type=None):
+        def _scan(cursor, match, count, _type):
+            with self._lock.reader():
+                def match_fn(key):
+                    if not self._key_match(match, key):
+                        return False
+                    item = self._cache[key]
+                    return self._is_type(item, _type)
+
+                end = cursor + count if count is not None else None
+
+                # filter first, then slice the filtered list, so that we paginate correctly
+                matches = filter(match_fn, self._cache.keys())
+                page = islice(matches, cursor, end)
+                return list(page)
+
+        return self._execute_command(_scan, cursor, match, count, _type)
 
     #### LIST COMMANDS ####
 
@@ -488,10 +514,39 @@ class Redis(BaseRedis):
         return pipe
 
     def execute_command(self, *args, **options):
-        raise NotImplemented("Executing commands is not supported by this Mock")
+        raise NotImplementedError("Executing commands is not supported by this Mock")
 
     def _execute_command(self, cmd, *args, **kwargs):
         return cmd(*args, **kwargs)
+
+    def _is_hash(self, val):
+        return isinstance(val, dict)
+
+    def _is_list(self, val):
+        return isinstance(val, list)
+
+    def _is_set(self, val):
+        return isinstance(val, set)
+
+    def _is_string(self, val):
+        return isinstance(val, (str, bytes))
+
+    def _is_type(self, val, type):
+        def not_implemented(val):
+            raise NotImplementedError("{} is not supported by this Mock".format(type))
+        return {
+            'hash': lambda x: isinstance(x, dict),
+            'list': lambda x: isinstance(x, list),
+            'set': lambda x: isinstance(x, set),
+            'stream': not_implemented,
+            'string': lambda x: isinstance(x, (str, bytes)),
+            'zset': not_implemented,
+            None: lambda x: True,
+        }[type](val)
+
+    def _key_match(self, pattern, key):
+        pattern = pattern or '*'
+        return fnmatch(key, self._to_str(pattern))
 
     def _assert_int(self, val):
         if val is None:
